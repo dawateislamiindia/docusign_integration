@@ -81,16 +81,42 @@ def get_signing_url(doctype, docname, token, code):
 			for i, document in enumerate(ds_doc.documents):
 				if document.document and i + 1 == len(ds_doc.documents):
 					signed_doc = document.document
+
+					# ---------- FIX START ----------
+					from urllib.parse import urlparse
+
+					# Remove token / scheme / domain
 					signed_doc_path = urlparse(signed_doc).path
+
+					# Normalize to /files/...
+					if "/files/" in signed_doc_path:
+						signed_doc_path = signed_doc_path[signed_doc_path.index("/files/"):]
+					else:
+						raise Exception(f"Invalid file path: {signed_doc_path}")
+
+					# Convert to absolute filesystem path
 					path = get_site_path(signed_doc_path.lstrip("/"))
-					with open(path, 'rb') as file:
+
+					# Read file
+					with open(path, "rb") as file:
 						output = file.read()
+					# ---------- FIX END ----------
+
 				else:
-					html = frappe.get_print(ds_doc.document_type, ds_doc.document, ds_doc.print_format)
+					html = frappe.get_print(
+						ds_doc.document_type,
+						ds_doc.document,
+						ds_doc.print_format
+					)
 					output = get_pdf(html)
 		else:
-			html = frappe.get_print(ds_doc.document_type, ds_doc.document, ds_doc.print_format)
+			html = frappe.get_print(
+				ds_doc.document_type,
+				ds_doc.document,
+				ds_doc.print_format
+			)
 			output = get_pdf(html)
+
 		base64_file_content = base64.b64encode(output).decode('ascii')
 
 		if not base64_file_content:

@@ -59,105 +59,106 @@ def get_access_token():
 
 
 def get_signing_url(doctype, docname, token, code):
-    try:
-        ds_doc = frappe.get_doc(doctype, docname)
-        ds_doc.code = code
+	try:
+		ds_doc = frappe.get_doc(doctype, docname)
+		ds_doc.code = code
 
-        args = {
-            "signer_email": ds_doc.signer_email if ds_doc.signer_email else "sonu@extensioncrm.com.com",
-            "signer_name": ds_doc.signer_name if ds_doc.signer_name else 'sonu kumar',
-            "client_id": frappe.db.get_single_value('Docusign Settings', 'integration_key'),
-            "account_id": frappe.db.get_single_value('Docusign Settings', 'account_id'),
-            "base_path": frappe.db.get_single_value('Docusign Settings', 'base_path'),
-            "access_token": token,
-            "server_url" : frappe.db.get_single_value('Docusign Settings', 'server_url')
-        }
-        bench_path = get_bench_path()
-        site_path = get_site_path().replace(".", "/sites", 1)
-        base_path = bench_path + site_path
-        output = ""
-        # return args
-        if ds_doc.documents:
-            for i, document in enumerate(ds_doc.documents):
-                if document.document and i + 1 == len(ds_doc.documents):
-                    signed_doc = document.document
-                    path = base_path + signed_doc
-                    with open(path, 'rb') as file:
-                        output = file.read()
-                else:
-                    html = frappe.get_print(ds_doc.document_type, ds_doc.document, ds_doc.print_format)
-                    output = get_pdf(html)
-        else:
-            html = frappe.get_print(ds_doc.document_type, ds_doc.document, ds_doc.print_format)
-            output = get_pdf(html)
-        base64_file_content = base64.b64encode(output).decode('ascii')
+		args = {
+			"signer_email": ds_doc.signer_email if ds_doc.signer_email else "sonu@extensioncrm.com.com",
+			"signer_name": ds_doc.signer_name if ds_doc.signer_name else 'sonu kumar',
+			"client_id": frappe.db.get_single_value('Docusign Settings', 'integration_key'),
+			"account_id": frappe.db.get_single_value('Docusign Settings', 'account_id'),
+			"base_path": frappe.db.get_single_value('Docusign Settings', 'base_path'),
+			"access_token": token,
+			"server_url" : frappe.db.get_single_value('Docusign Settings', 'server_url')
+		}
+		bench_path = get_bench_path()
+		site_path = get_site_path().replace(".", "/sites", 1)
+		base_path = bench_path + site_path
+		output = ""
+		# return args
+		if ds_doc.documents:
+			for i, document in enumerate(ds_doc.documents):
+				if document.document and i + 1 == len(ds_doc.documents):
+					signed_doc = document.document
+					signed_doc_path = urlparse(signed_doc).path
+					path = get_site_path(signed_doc_path.lstrip("/"))
+					with open(path, 'rb') as file:
+						output = file.read()
+				else:
+					html = frappe.get_print(ds_doc.document_type, ds_doc.document, ds_doc.print_format)
+					output = get_pdf(html)
+		else:
+			html = frappe.get_print(ds_doc.document_type, ds_doc.document, ds_doc.print_format)
+			output = get_pdf(html)
+		base64_file_content = base64.b64encode(output).decode('ascii')
 
-        if not base64_file_content:
-            return "Failed to generate document content"
+		if not base64_file_content:
+			return "Failed to generate document content"
 
-        res = send_document(args, base64_file_content)
-        envelope_id = res["envelopeId"]
-        # return res["uri"]
-        ds_doc.append("documents", {
-            'docusign_envelope_id': envelope_id,
-        })
-        ds_doc.save()
-        frappe.db.set_value(ds_doc.document_type, ds_doc.document, 'dsc_status', ds_doc.workflow_state)
-        pathValue = doctype.lower().replace(" ", "-")
-        location_url = f"/app/{pathValue}"
-        frappe.local.response['type'] = 'redirect'
-        frappe.local.response['location'] = location_url
-        frappe.db.commit()
-    except Exception as e:
-        frappe.logger("docusign").exception(e)
-        return f"Error: {e}"
+		res = send_document(args, base64_file_content)
+		envelope_id = res["envelopeId"]
+		# return res["uri"]
+		ds_doc.append("documents", {
+			'docusign_envelope_id': envelope_id,
+		})
+		ds_doc.save()
+		frappe.db.set_value(ds_doc.document_type, ds_doc.document, 'dsc_status', ds_doc.workflow_state)
+		pathValue = doctype.lower().replace(" ", "-")
+		location_url = f"/app/{pathValue}"
+		frappe.local.response['type'] = 'redirect'
+		frappe.local.response['location'] = location_url
+		frappe.db.commit()
+	except Exception as e:
+		frappe.logger("docusign").exception(e)
+		return f"Error: {e}"
 
 
 def send_document(args, document):
-    base_url = "https://demo.docusign.net/restapi"
-    api_version = "v2.1"
-    url = f"{base_url}/{api_version}/accounts/{args['account_id']}/envelopes"
+	base_url = "https://demo.docusign.net/restapi"
+	api_version = "v2.1"
+	url = f"{base_url}/{api_version}/accounts/{args['account_id']}/envelopes"
 
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {args['access_token']}"
-    }
-    server_url = args["server_url"]
-    emailSubject = f"Please sign this document sent {server_url}"
-    # Create the request body
-    payload = {
-        "documents": [
-            {
-                "documentBase64": document,
-                "documentId": 1,
-                "fileExtension": "pdf",
-                "name": "document ready for sign"
-            }
-        ],
-        "emailSubject": emailSubject,
-        "recipients": {
-            "signers": [
-                {
-                    "email": args["signer_email"],
-                    "name": args["signer_name"],
-                    "recipientId": "2"
-                }
-            ]
-        },
-        "status": "sent"
-    }
+	headers = {
+		"Content-Type": "application/json",
+		"Authorization": f"Bearer {args['access_token']}"
+	}
+	server_url = args["server_url"]
+	emailSubject = f"Please sign this document sent {server_url}"
+	# Create the request body
+	payload = {
+		"documents": [
+			{
+				"documentBase64": document,
+				"documentId": 1,
+				"fileExtension": "pdf",
+				"name": "document ready for sign"
+			}
+		],
+		"emailSubject": emailSubject,
+		"recipients": {
+			"signers": [
+				{
+					"email": args["signer_email"],
+					"name": args["signer_name"],
+					"recipientId": "2"
+				}
+			]
+		},
+		"status": "sent"
+	}
 
-    # Convert payload to JSON
-    payload_json = json.dumps(payload)
+	# Convert payload to JSON
+	payload_json = json.dumps(payload)
 
-    # Send the request
-    response = requests.post(url, headers=headers, data=payload_json)
+	# Send the request
+	response = requests.post(url, headers=headers, data=payload_json)
 
-    if response.status_code == 201:
-        envelope_details = response.json()
-        return envelope_details
-    else:
-        return f"Failed to send document. Status code: {response.status_code}, Error: {response.text}"
+	if response.status_code == 201:
+		envelope_details = response.json()
+		return envelope_details
+	else:
+		return f"Failed to send document. Status code: {response.status_code}, Error: {response.text}"
 
 
 # This Method set as a webhook on Docusign Connect section in Configurations
